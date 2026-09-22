@@ -1,0 +1,6 @@
+{
+  "name": "QBasic IMG Converter & Code Generator",
+  "description": "Convert images to QBasic graphic formats with 1-bit, 2-bit, 4-bit, and 8-bit dithering, QBasic GET/PUT array headers, and runnable loader and saver code.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
