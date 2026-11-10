@@ -1,4 +1,4 @@
-import { PalettePreset, RGBColor } from '../types';
+import { BitDepth, PalettePreset, RGBColor } from '../types';
 
 export const PALETTE_PRESETS: PalettePreset[] = [
   // ----------------------------------------------------
@@ -421,8 +421,133 @@ function generateVGA256Palette(): RGBColor[] {
 }
 
 export function rgbToHex(c: RGBColor): string {
-  const r = c.r.toString(16).padStart(2, '0');
-  const g = c.g.toString(16).padStart(2, '0');
-  const b = c.b.toString(16).padStart(2, '0');
+  const r = Math.min(255, Math.max(0, Math.round(c.r))).toString(16).padStart(2, '0');
+  const g = Math.min(255, Math.max(0, Math.round(c.g))).toString(16).padStart(2, '0');
+  const b = Math.min(255, Math.max(0, Math.round(c.b))).toString(16).padStart(2, '0');
   return `#${r}${g}${b}`.toUpperCase();
 }
+
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const cleaned = hex.trim().replace(/^#/, '');
+  if (cleaned.length === 3) {
+    const r = parseInt(cleaned[0] + cleaned[0], 16);
+    const g = parseInt(cleaned[1] + cleaned[1], 16);
+    const b = parseInt(cleaned[2] + cleaned[2], 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+    return { r, g, b };
+  }
+  if (cleaned.length === 6) {
+    const r = parseInt(cleaned.slice(0, 2), 16);
+    const g = parseInt(cleaned.slice(2, 4), 16);
+    const b = parseInt(cleaned.slice(4, 6), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+    return { r, g, b };
+  }
+  return null;
+}
+
+export function interpolateColor(
+  c1: { r: number; g: number; b: number },
+  c2: { r: number; g: number; b: number },
+  t: number,
+  index: number,
+  name?: string
+): RGBColor {
+  return {
+    r: Math.round(c1.r + (c2.r - c1.r) * t),
+    g: Math.round(c1.g + (c2.g - c1.g) * t),
+    b: Math.round(c1.b + (c2.b - c1.b) * t),
+    name: name || `Color ${index}`,
+    index,
+  };
+}
+
+export function generateQBasicDacCode(colors: RGBColor[], bitDepth: BitDepth): string {
+  const lines: string[] = [];
+  lines.push(`' Custom ${colors.length}-Color Palette via VGA DAC Registers (&H3C8 / &H3C9)`);
+  lines.push(`' In DOS QBasic/QuickBASIC, VGA DAC channels accept 0..63 (6-bit resolution)`);
+
+  if (colors.length <= 16) {
+    lines.push(`FOR i% = 0 TO ${colors.length - 1}`);
+    lines.push(`    READ r6%, g6%, b6%`);
+    lines.push(`    OUT &H3C8, i%`);
+    lines.push(`    OUT &H3C9, r6%: OUT &H3C9, g6%: OUT &H3C9, b6%`);
+    lines.push(`NEXT i%`);
+    lines.push(`' DATA statements: R, G, B in 0..63 scale`);
+    
+    // Chunk DATA statements by 4 colors per line
+    for (let i = 0; i < colors.length; i += 4) {
+      const chunk = colors.slice(i, i + 4);
+      const dataValues = chunk.flatMap((c) => [
+        Math.round((c.r * 63) / 255),
+        Math.round((c.g * 63) / 255),
+        Math.round((c.b * 63) / 255),
+      ]);
+      lines.push(`DATA ${dataValues.join(', ')}  ' Colors ${i}..${i + chunk.length - 1}`);
+    }
+  } else {
+    // 8-bit 256 colors
+    lines.push(`' Set DAC write index to 0, then stream 256 colors (3 bytes each)`);
+    lines.push(`OUT &H3C8, 0`);
+    lines.push(`RESTORE PaletteData`);
+    lines.push(`FOR i% = 0 TO 255`);
+    lines.push(`    READ r6%, g6%, b6%`);
+    lines.push(`    OUT &H3C9, r6%: OUT &H3C9, g6%: OUT &H3C9, b6%`);
+    lines.push(`NEXT i%`);
+    lines.push(`' First 8 colors shown as sample DATA:`);
+    for (let i = 0; i < Math.min(8, colors.length); i += 4) {
+      const chunk = colors.slice(i, i + 4);
+      const dataValues = chunk.flatMap((c) => [
+        Math.round((c.r * 63) / 255),
+        Math.round((c.g * 63) / 255),
+        Math.round((c.b * 63) / 255),
+      ]);
+      lines.push(`DATA ${dataValues.join(', ')}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function generateCustomPalettePreset(
+  bitDepth: BitDepth,
+  colors: RGBColor[],
+  customName: string = 'Custom Palette'
+): PalettePreset {
+  let screenMode = 'SCREEN 1';
+  let qbasicScreenCmd = 'SCREEN 1';
+
+  if (bitDepth === 1) {
+    screenMode = 'SCREEN 2';
+    qbasicScreenCmd = 'SCREEN 2';
+  } else if (bitDepth === 2) {
+    screenMode = 'SCREEN 1';
+    qbasicScreenCmd = 'SCREEN 1';
+  } else if (bitDepth === 4) {
+    screenMode = 'SCREEN 12';
+    qbasicScreenCmd = 'SCREEN 12';
+  } else if (bitDepth === 8) {
+    screenMode = 'SCREEN 13';
+    qbasicScreenCmd = 'SCREEN 13';
+  }
+
+  const normalizedColors = colors.map((c, i) => ({
+    r: Math.min(255, Math.max(0, Math.round(c.r))),
+    g: Math.min(255, Math.max(0, Math.round(c.g))),
+    b: Math.min(255, Math.max(0, Math.round(c.b))),
+    name: c.name || `Color ${i}`,
+    index: i,
+  }));
+
+  return {
+    id: 'custom',
+    name: `${customName} (${colors.length} Colors)`,
+    bitDepth,
+    description: `User-defined custom RGB palette with ${colors.length} colors`,
+    screenMode,
+    qbasicScreenCmd,
+    qbasicPaletteCode: generateQBasicDacCode(normalizedColors, bitDepth),
+    colors: normalizedColors,
+  };
+}
+

@@ -4,8 +4,9 @@ import {
   ConversionOutput,
   ImageProcessingConfig,
   PalettePreset,
+  RGBColor,
 } from './types';
-import { PALETTE_PRESETS } from './utils/palettes';
+import { PALETTE_PRESETS, generateCustomPalettePreset } from './utils/palettes';
 import { quantizeAndDither } from './utils/dithering';
 import { encodeQBasicImage } from './utils/qbasicHeader';
 import { SAMPLE_IMAGES } from './utils/sampleImages';
@@ -16,11 +17,13 @@ import { ControlsPanel } from './components/ControlsPanel';
 import { HeaderInspector } from './components/HeaderInspector';
 import { CodeViewer } from './components/CodeViewer';
 import { SpecModal } from './components/SpecModal';
+import { PaletteEditorModal } from './components/PaletteEditorModal';
 
 export default function App() {
   const [originalImage, setOriginalImage] = useState<ImageData | null>(null);
   const [fileName, setFileName] = useState<string>('RETRO_CGA.BIN');
   const [isSpecModalOpen, setIsSpecModalOpen] = useState<boolean>(false);
+  const [isPaletteEditorOpen, setIsPaletteEditorOpen] = useState<boolean>(false);
 
   // Configuration state with 2-bit CGA dithering as prominent default
   const [config, setConfig] = useState<ImageProcessingConfig>({
@@ -42,11 +45,27 @@ export default function App() {
 
   const [conversion, setConversion] = useState<ConversionOutput | null>(null);
 
-  // Active palette preset lookup
+  // Active palette preset lookup (handles both standard hardware presets and user custom palettes)
   const activePalette: PalettePreset = useMemo(() => {
+    if (config.paletteId === 'custom' && config.customColors && config.customColors.length > 0) {
+      return generateCustomPalettePreset(config.bitDepth, config.customColors);
+    }
     const list = PALETTE_PRESETS.filter((p) => p.bitDepth === config.bitDepth);
     return list.find((p) => p.id === config.paletteId) || list[0] || PALETTE_PRESETS[0];
-  }, [config.bitDepth, config.paletteId]);
+  }, [config.bitDepth, config.paletteId, config.customColors]);
+
+  const handleApplyCustomPalette = (newColors: RGBColor[], bitDepth: BitDepth, name?: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      bitDepth,
+      paletteId: 'custom',
+      customColors: newColors,
+      customPalettesByDepth: {
+        ...prev.customPalettesByDepth,
+        [bitDepth]: newColors,
+      },
+    }));
+  };
 
   // Load default retro sample image on initial mount
   useEffect(() => {
@@ -285,6 +304,7 @@ export default function App() {
             config={config}
             onChangeConfig={(partial) => setConfig((prev) => ({ ...prev, ...partial }))}
             onResetAdjustments={handleResetAdjustments}
+            onOpenPaletteEditor={() => setIsPaletteEditorOpen(true)}
           />
 
           {conversion && (
@@ -309,6 +329,16 @@ export default function App() {
 
       {/* Specification Modal */}
       <SpecModal isOpen={isSpecModalOpen} onClose={() => setIsSpecModalOpen(false)} />
+
+      {/* Hardware Palette Editor Modal */}
+      <PaletteEditorModal
+        isOpen={isPaletteEditorOpen}
+        onClose={() => setIsPaletteEditorOpen(false)}
+        currentBitDepth={config.bitDepth}
+        currentPalette={activePalette}
+        customColorsForDepth={config.customPalettesByDepth?.[config.bitDepth] || config.customColors}
+        onApplyPalette={handleApplyCustomPalette}
+      />
     </div>
   );
 }

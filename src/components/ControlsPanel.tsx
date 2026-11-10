@@ -23,6 +23,7 @@ interface ControlsPanelProps {
   config: ImageProcessingConfig;
   onChangeConfig: (newConfig: Partial<ImageProcessingConfig>) => void;
   onResetAdjustments: () => void;
+  onOpenPaletteEditor: () => void;
 }
 
 const DITHER_ALGORITHMS: { id: DitherAlgorithm; name: string; desc: string; bestFor?: string }[] = [
@@ -79,10 +80,12 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   config,
   onChangeConfig,
   onResetAdjustments,
+  onOpenPaletteEditor,
 }) => {
   // Filter palettes matching the active bit depth
   const availablePalettes = PALETTE_PRESETS.filter((p) => p.bitDepth === config.bitDepth);
   const activePalette = availablePalettes.find((p) => p.id === config.paletteId) || availablePalettes[0];
+  const customForBpp = config.customPalettesByDepth?.[config.bitDepth];
 
   return (
     <div className="flex flex-col gap-5 text-stone-200 text-xs font-mono">
@@ -110,12 +113,22 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 type="button"
                 id={`ctrl-bpp-${bpp}`}
                 onClick={() => {
-                  // When switching bit depth, pick first palette for that depth
+                  // When switching bit depth, pick custom palette if was on custom and exists, or first preset
                   const newPalettes = PALETTE_PRESETS.filter((p) => p.bitDepth === bpp);
-                  onChangeConfig({
-                    bitDepth: bpp,
-                    paletteId: newPalettes[0]?.id || config.paletteId,
-                  });
+                  const savedCustom = config.customPalettesByDepth?.[bpp];
+                  if (config.paletteId === 'custom' && savedCustom) {
+                    onChangeConfig({
+                      bitDepth: bpp,
+                      paletteId: 'custom',
+                      customColors: savedCustom,
+                    });
+                  } else {
+                    onChangeConfig({
+                      bitDepth: bpp,
+                      paletteId: newPalettes[0]?.id || config.paletteId,
+                      customColors: savedCustom,
+                    });
+                  }
                 }}
                 className={`flex flex-col items-center justify-center p-2.5 rounded-lg border transition-all text-center ${
                   isSelected
@@ -141,14 +154,82 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
         </div>
       </section>
 
-      {/* 2. Palette Presets */}
+      {/* 2. Palette Presets & Custom Editor */}
       <section className="bg-stone-900 border border-stone-800 rounded-xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-2.5">
           <label className="text-stone-300 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
             <Palette className="w-3.5 h-3.5 text-cyan-400" />
             <span>Hardware Palette ({availablePalettes.length})</span>
           </label>
+
+          <button
+            type="button"
+            id="open-palette-editor-btn"
+            onClick={onOpenPaletteEditor}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-emerald-400 hover:text-emerald-300 border border-stone-700 hover:border-emerald-500/50 text-[11px] font-semibold transition-all shadow-sm"
+          >
+            <Sliders className="w-3 h-3 text-emerald-400" />
+            <span>Palette Editor</span>
+          </button>
         </div>
+
+        {/* Custom Palette Option Card (if active or if custom colors exist for this depth) */}
+        {(config.paletteId === 'custom' || customForBpp) && (
+          <div
+            className={`mb-2 p-2 rounded-lg border transition-all flex items-center justify-between gap-2 ${
+              config.paletteId === 'custom'
+                ? 'bg-stone-800 border-emerald-500/90 text-white shadow-sm ring-1 ring-emerald-500/40'
+                : 'bg-stone-950/60 border-stone-800 text-stone-300 hover:border-stone-700'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const targetColors = config.customColors || customForBpp;
+                if (targetColors) {
+                  onChangeConfig({ paletteId: 'custom', customColors: targetColors });
+                }
+              }}
+              className="flex-1 min-w-0 text-left flex items-center gap-2"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-[11px] text-emerald-300">User Custom Palette</span>
+                  {config.paletteId === 'custom' && <Check className="w-3 h-3 text-emerald-400 shrink-0" />}
+                </div>
+                <p className="text-[10px] text-stone-400 truncate mt-0.5">
+                  {config.customColors?.length || customForBpp?.length || 4} custom RGB DAC colors
+                </p>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center border border-stone-700 rounded overflow-hidden shadow-inner">
+                {(config.customColors || customForBpp || []).slice(0, 8).map((c, idx) => (
+                  <div
+                    key={idx}
+                    className="w-3 h-5"
+                    style={{ backgroundColor: rgbToHex(c) }}
+                    title={`#${idx}: ${rgbToHex(c)}`}
+                  />
+                ))}
+                {(config.customColors || customForBpp || []).length > 8 && (
+                  <div className="px-1 text-[8px] bg-stone-900 text-stone-400">
+                    +{(config.customColors || customForBpp || []).length - 8}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                id="edit-custom-palette-btn"
+                onClick={onOpenPaletteEditor}
+                className="px-2 py-1 rounded bg-stone-700 hover:bg-stone-600 text-emerald-300 text-[10px] font-semibold border border-stone-600 transition-colors"
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
           {availablePalettes.map((preset) => {

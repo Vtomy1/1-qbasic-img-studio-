@@ -52,6 +52,7 @@ export interface ImageProcessingConfig {
   bitDepth: BitDepth;
   paletteId: string;
   customColors?: RGBColor[];
+  customPalettesByDepth?: Partial<Record<BitDepth, RGBColor[]>>;
   ditherAlgorithm: DitherAlgorithm;
   ditherStrength: number; // 0 to 1
   brightness: number; // -100 to 100
